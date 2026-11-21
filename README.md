@@ -1,5 +1,7 @@
 # PMGT-MCP — 让 AI 来玩 RPG Maker MZ 的解谜
 
+> **An MCP server that lets a language model play RPG Maker MZ games by reading the engine state directly, not the screen.** It observes the live game, walks grid by grid, interacts with events, advances dialogue, makes choices and uses items — and it is deliberately unable to teleport, grant items or flip switches.
+
 一个 [MCP（Model Context Protocol）](https://modelcontextprotocol.io) 服务，让 AI agent **观察** RPG Maker MZ 游戏的状态、**逐格移动**、**与事件交互、推进对白、做出选择、使用道具**，从而辅助（或代替）玩家解谜。比赛中使用 **OpenClaw + Cerebras 上的 Kimi K3.1 Pro**。
 
 目前以 **《Pocket Mirror ~ GoldenerTraum》（黄金镜）** 为目标游戏开发。
@@ -185,6 +187,6 @@ PMGT_MCP_DEV=1 PMGT_CDP_PORT=9334 npm run smoke   # MCP 端到端测试
 - [NW.js](https://nwjs.io)、[OpenClaw](https://openclaw.ai)、[Cerebras](https://cerebras.ai)、[Moonshot AI（Kimi）](https://www.moonshot.ai)
 - RPG Maker MZ 引擎（© Gotcha Gotcha Games）；《Pocket Mirror ~ GoldenerTraum》（© 原作者）
 
-## 许可证
+## 许可证 / License
 
-待定。
+[MIT](LICENSE) © 2026 Mari-2233
