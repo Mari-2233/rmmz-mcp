@@ -1,0 +1,13 @@
+node_modules/
+*.log
+*.jpg
+*.png
+*.err
+
+# Internal dev docs, agent task packs, run logs (not published)
+DESIGN.md
+agents/
+runs/
+
+# OpenClaw exports that may land in the working dir
+.openclaw/

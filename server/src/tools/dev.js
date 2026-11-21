@@ -1,0 +1,26 @@
+// Dev-only tools (registered only when PMGT_MCP_DEV=1). Never enable for the AI player in the demo.
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import { z } from 'zod';
+import { ok, safe } from '../util.js';
+
+export const BRIDGE_PATH = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../game/ai-bridge.js');
+
+export function register({ server, cdp }) {
+  server.registerTool('eval_js', {
+    title: 'Evaluate JS (dev)',
+    description: 'DEV ONLY: evaluate a JavaScript expression in the game page and return its JSON value.',
+    inputSchema: { expression: z.string().describe('JS expression; promises are awaited') },
+  }, safe(async ({ expression }) => ok({ value: await cdp.evaluate(expression) ?? null })));
+
+  server.registerTool('reload_bridge', {
+    title: 'Reload bridge (dev)',
+    description: 'DEV ONLY: re-evaluate mcp-mod/game/ai-bridge.js in the running game without restarting it.',
+  }, safe(async () => {
+    const code = await readFile(BRIDGE_PATH, 'utf8');
+    await cdp.evaluate(`(0, eval)(${JSON.stringify(code + '\n//# sourceURL=ai-bridge.js')}); true`);
+    const version = await cdp.evaluate('window.__ai && window.__ai.version');
+    return ok({ reloaded: true, version });
+  }));
+}
