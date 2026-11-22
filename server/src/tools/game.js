@@ -29,11 +29,31 @@ function compactResult(r) {
   return r;
 }
 
+// The model's attention follows the end of a tool result: keep `budget` as the last field.
+function budgetLast(r) {
+  if (!r || typeof r !== 'object' || Array.isArray(r) || !('budget' in r)) return r;
+  const { budget, ...rest } = r;
+  return { ...rest, budget };
+}
+
 export function register({ server, cdp }) {
   // Call window.__ai[method]; map "bridge/method missing" to NOT_READY so the model gets a clear error.
+  // PMGT_BUDGET=1: make sure the in-game action budget is on (survives game restarts / bridge reloads).
+  const BUDGET = process.env.PMGT_BUDGET === '1';
+  // PMGT_HUD=1: report each call + the model's think time (gap since the previous result) to the overlay.
+  const HUD = process.env.PMGT_HUD === '1';
+  let lastEnd = 0;
   async function call(method, args = [], timeoutMs = READ_TIMEOUT_MS) {
+    const think = lastEnd ? Date.now() - lastEnd : -1;
+    if (HUD) cdp.evaluate(`window.__ai && __ai.hud && __ai.hud.tool(${JSON.stringify(method)}, ${think}); true`).catch(() => {});
     try {
-      return compactResult(await cdp.callBridge(method, args, { timeoutMs }));
+      return await callInner(method, args, timeoutMs);
+    } finally { lastEnd = Date.now(); }
+  }
+  async function callInner(method, args, timeoutMs) {
+    try {
+      if (BUDGET) await cdp.evaluate('window.__ai && __ai.budget && !window.__aiBudget.enabled && __ai.budget.enable(true); true').catch(() => {});
+      return budgetLast(compactResult(await cdp.callBridge(method, args, { timeoutMs })));
     } catch (e) {
       if (e instanceof CdpError && e.code === 'JS_EXCEPTION') {
         if (/BRIDGE_NO_METHOD/.test(e.message)) throw new CdpError('NOT_READY', `bridge method ${method} missing (game-side part not loaded)`);
@@ -127,6 +147,22 @@ export function register({ server, cdp }) {
   tool('read_dialogue', 'Read dialogue',
     'Advance through dialogue/cutscene until input is needed (EXPLORE, CHOICE, ...). Returns all lines at once and the new state.',
     null, false, () => call('readDialogue', [], ACTION_TIMEOUT_MS));
+
+  tool('reflect', 'Reflect',
+    'Think: clues seen, a hypothesis, ONE concrete next action. Required when budget is empty; restores part of it (less each time). Saved as a note.',
+    {
+      clues: z.array(z.string()).min(2).max(8).describe('Concrete things you saw/read in game'),
+      hypothesis: z.string().describe('What you think the puzzle wants'),
+      plan: z.object({
+        action: z.enum(['interact', 'use_item', 'approach', 'leave', 'ask_user']),
+        event_id: z.number().int().optional(), item_id: z.number().int().optional(),
+      }).describe('The next action that tests the hypothesis'),
+    }, false, a => call('reflect', [a]));
+
+  tool('ask_user', 'Ask user',
+    'Ask the user a question when stuck (like asking a friend). Then end your turn and wait for the answer.',
+    { question: z.string().describe('What you need to know and what you already tried') },
+    false, async ({ question }) => ({ asked: question, next: 'End your turn now and wait for the user to answer.' }));
 
   tool('advance', 'Advance', 'Press confirm once to advance dialogue (DIALOGUE/CUTSCENE). Returns the new state.',
     null, false, () => call('advance', [], ACTION_TIMEOUT_MS));

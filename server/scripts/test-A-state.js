@@ -97,7 +97,7 @@ try {
   const w3 = await call('waitFor', [['DIALOGUE', 'CHOICE'], 8000]);
   check('3a state DIALOGUE', w3.ok && w3.state.state === 'DIALOGUE', w3.state.state);
   check('3b message mentions mirror', /mirror/i.test(w3.state.message?.text || ''), w3.state.message);
-  check('3c allowed_actions === [advance]', JSON.stringify(w3.state.allowed_actions) === '["advance"]', w3.state.allowed_actions);
+  check('3c allowed_actions only dialogue actions', JSON.stringify([...w3.state.allowed_actions].sort()) === '["advance","read_dialogue"]', w3.state.allowed_actions);
   const end3 = await finishEvent();
   check('3d back to EXPLORE', end3.state === 'EXPLORE', end3.state);
 

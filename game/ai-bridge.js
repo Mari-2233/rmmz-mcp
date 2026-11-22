@@ -92,13 +92,21 @@
 
   // Load parts/NN-name.js in file-name order. Each part is the body of `function (ai, util)`.
   // Parts are re-read from disk on every (re)load, so editing a part + reload_bridge is enough.
+  // Parts come from window.__AI_BRIDGE_PARTS when the MCP server injects the bridge over CDP
+  // (game on another machine), otherwise from disk next to this file.
   window.__ai.parts = [];
   try {
-    const fs = require('fs'), path = require('path');
-    const dir = window.__AI_BRIDGE_DIR || path.join(process.cwd(), 'mcp-mod', 'game', 'parts');
-    for (const f of fs.readdirSync(dir).filter(n => /^\d\d-.*\.js$/.test(n)).sort()) {
+    let parts = window.__AI_BRIDGE_PARTS;
+    if (!Array.isArray(parts)) {
+      const fs = require('fs'), path = require('path');
+      const dir = window.__AI_BRIDGE_DIR || path.join(process.cwd(), 'mcp-mod', 'game', 'parts');
+      parts = fs.readdirSync(dir).filter(n => /^\d\d-.*\.js$/.test(n)).sort()
+        .map(name => ({ name, code: fs.readFileSync(path.join(dir, name), 'utf8') }));
+    }
+    window.__AI_BRIDGE_PARTS = undefined;
+    for (const { name: f, code } of parts) {
       try {
-        const fn = (0, eval)('(function (ai, util) {\n' + fs.readFileSync(path.join(dir, f), 'utf8') + '\n})\n//# sourceURL=parts/' + f);
+        const fn = (0, eval)('(function (ai, util) {\n' + code + '\n})\n//# sourceURL=parts/' + f);
         fn(window.__ai, window.__ai.util);
         window.__ai.parts.push(f);
       } catch (e) {

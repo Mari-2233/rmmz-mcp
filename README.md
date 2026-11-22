@@ -148,6 +148,16 @@ server/scripts/openclaw-play.sh cerebras/moonshotai-kimi-k3.1-pro-trial 30 9333 
 - 服务说明（MCP `instructions`）要求：`describe_event` 的内容只用于自己推理，绝不能把玩家没见过的对白、分支告诉用户；提示模式只给线索，不代打。
 - 推荐在客户端隐藏 `describe_event`、`get_variables`、`get_switches`（见上方 `toolFilter`）。
 
+## 游戏在另一台 Windows 电脑上运行（网络控制）
+
+MCP 服务和 AI 客户端留在一台机器上，游戏在另一台（比如有独显的 Windows）上运行，两者只通过 CDP 通信。桥接代码由 MCP 服务在连接时通过网络注入，Windows 那边不需要本仓库的其他文件。
+
+1. 在 Windows 上：把 `host/` 拷过去，运行 `powershell -ExecutionPolicy Bypass -File host\windows\run-pmgt.ps1 -GameDir "<游戏目录>"`。它会结束已运行的游戏、建立/刷新覆盖层（游戏目录不会被修改，旁边生成 `<游戏目录>-pmgt`，只有联接点和硬链接）、修复覆盖层里的 index.html、带 DevTools 端口 9333 和防后台节流/DPI 参数启动游戏，并注入桥接、设置窗口大小。
+2. 需要从另一台机器连接时，在 Windows 的**管理员** PowerShell 里运行一次 `host\windows\expose-cdp.ps1 -RemoteIp <MCP 服务所在机器的 IP>`：添加端口转发 9334→9333，防火墙只放行这一个 IP。用完运行 `expose-cdp.ps1 -Remove` 撤销。
+3. 在 MCP 服务这边设置 `PMGT_CDP_HOST=<Windows IP>`、`PMGT_CDP_PORT=9334`，再加 `PMGT_BACKGROUND=1`（失去焦点/最小化时游戏继续运行，绕过 VisuMZ 的 RequireFocus）。MCP 服务连接时会用本机的最新桥接替换游戏里的旧版本。
+
+> ⚠️ 能连上这个端口的机器可以在游戏进程里执行任意代码。只在可信的局域网里使用，并限制来源 IP。
+
 ## 在 Linux 上运行 RMMZ 游戏（不用 Wine）
 
 - `runtime/run-linux.sh`：启动器。生成一个"覆盖层"目录，里面全是指向游戏文件的符号链接，只有 `package.json` 换成自己的版本（开启 DevTools、注入脚本）。**游戏文件本身不会被修改。**

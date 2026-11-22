@@ -14,7 +14,7 @@ export class CdpError extends Error {
 }
 
 export class CdpClient extends EventEmitter {
-  constructor({ host = '127.0.0.1', port = 9333, targetSuffix = 'index.html', timeoutMs = 15000 } = {}) {
+  constructor({ host = process.env.PMGT_CDP_HOST || '127.0.0.1', port = 9333, targetSuffix = 'index.html', timeoutMs = 15000 } = {}) {
     super();
     this.host = host;
     this.port = port;
@@ -55,7 +55,9 @@ export class CdpClient extends EventEmitter {
     if (this.connecting) return this.connecting;
     this.connecting = (async () => {
       const target = await this.findTarget();
-      const ws = new WebSocket(target.webSocketDebuggerUrl, { perMessageDeflate: false, maxPayload: 256 * 1024 * 1024 });
+      // Behind a port forward the advertised URL may say 127.0.0.1:<game port>: use our host:port.
+      const wsUrl = target.webSocketDebuggerUrl.replace(/^ws:\/\/[^/]+/, `ws://${this.host}:${this.port}`);
+      const ws = new WebSocket(wsUrl, { perMessageDeflate: false, maxPayload: 256 * 1024 * 1024 });
       await new Promise((resolve, reject) => {
         ws.once('open', resolve);
         ws.once('error', reject);
@@ -68,6 +70,8 @@ export class CdpClient extends EventEmitter {
       await this.send('Runtime.enable');
       await this.send('Page.enable');
       for (const name of this.bindings) await this.send('Runtime.addBinding', { name });
+      // Hook run before any call proceeds (e.g. inject the bridge into a remote game).
+      if (this.onConnect) { try { await this.onConnect(target); } catch (e) { this.emit('hookError', e); } }
       this.emit('connected', target);
     })().finally(() => { this.connecting = null; });
     return this.connecting;

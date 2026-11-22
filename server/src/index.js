@@ -5,6 +5,7 @@
 //   PMGT_MCP_DEV=1  → also register dev-only tools (eval_js, reload_bridge)
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { ensureBridge } from './bridge.js';
 import { CdpClient } from './cdp.js';
 import { EventLog } from './events.js';
 import { log } from './util.js';
@@ -20,6 +21,18 @@ const events = new EventLog(1000);
 await cdp.addBinding('__aiNotify');
 cdp.on('binding', (name, payload) => { if (name === '__aiNotify') events.push(payload); });
 cdp.on('connected', t => log('CDP connected:', t.url));
+// Remote games (Windows) have no linux-inject.js: ship the bridge over CDP before the first call.
+cdp.onConnect = async () => {
+  const r = await ensureBridge(cdp);
+  if (r) log(`bridge ${r} over CDP`);
+  if (process.env.PMGT_BACKGROUND === '1') await cdp.evaluate('window.__ai && __ai.background && __ai.background(true); true');
+  const size = /^(\d+)x(\d+)$/.exec(process.env.PMGT_WINDOW || '');
+  if (size) await cdp.evaluate(`window.__ai && __ai.windowSize && __ai.windowSize(${size[1]}, ${size[2]}); true`);
+  if (process.env.PMGT_HUD === '1') {
+    await cdp.evaluate(`window.__ai && __ai.hud && __ai.hud.show(true, ${JSON.stringify(process.env.PMGT_HUD_LABEL || '')}); true`);
+  }
+};
+cdp.on('hookError', e => log('bridge inject failed:', e.message));
 cdp.on('disconnected', () => log('CDP disconnected (will reconnect on next call)'));
 cdp.on('error', e => log('CDP error:', e.message));
 
@@ -39,18 +52,16 @@ const INSTRUCTIONS = [
   "OTHER_SCENE: Scene_Item -> pick_item; else wait or tell the user.",
   "GAME_OVER: stop and tell the user.",
   "",
-  "EXPLORING (each call is slow: prefer fewer, bigger calls)",
-  "- list_events, then approach(event_id): walks there, faces it, interacts and returns the dialogue in ONE call. Use walk/face/interact only for fine control.",
-  "- map_grid shows walls: '#' blocked, '.' floor, '@' you, 'E' solid event.",
-  "- walk/approach may stop early ('blocked', 'state_changed'): read the state and react.",
-  "- Events with shortcut:true accept an item: face them and use_item(item_id) (ids from list_items).",
-  "- get_log shows what happened recently. Dialogue can contain the solution: read it.",
+  "EXPLORING",
+  "- list_events, then approach(event_id): walks there, faces it, interacts and returns the dialogue in ONE call.",
+  "- map_grid: '#' wall, '.' floor, '@' you, 'E' solid event. trigger 1 events (doors) start when you step on them.",
+  "- Events with shortcut:true accept an item: face them and use_item(item_id).",
+  "- Dialogue holds the clues. Think before acting: what does the game want here?",
   "",
-  "WHEN STUCK",
-  "- list_events marks checked:N for events you already examined; try unchecked ones first.",
-  "- trigger 1 events (doors, teleports) start when you walk onto them: approach them.",
-  "- Re-check objects after getting an item or when something changed.",
-  "- The text state has everything; no need to look at the screen.",
+  "BUDGET (if present, always the last field of a result)",
+  "- interact costs 1, use_item 2; new dialogue/items/rooms make it free. Repeating things wastes it.",
+  "- Empty: only reflect (clues, hypothesis, one concrete plan). Off-plan actions cost double.",
+  "- Stuck: leave the room to look elsewhere, or ask_user.",
   "",
   "NO SPOILERS",
   "- If describe_event is available: it reveals hidden scripts; use it only for your own reasoning, never tell the user content they haven't seen in game.",

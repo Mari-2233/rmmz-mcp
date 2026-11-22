@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { z } from 'zod';
 import { ok, safe } from '../util.js';
+import { bridgeBundle } from '../bridge.js';
 
 export const BRIDGE_PATH = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../game/ai-bridge.js');
 
@@ -18,8 +19,7 @@ export function register({ server, cdp }) {
     title: 'Reload bridge (dev)',
     description: 'DEV ONLY: re-evaluate mcp-mod/game/ai-bridge.js in the running game without restarting it.',
   }, safe(async () => {
-    const code = await readFile(BRIDGE_PATH, 'utf8');
-    await cdp.evaluate(`(0, eval)(${JSON.stringify(code + '\n//# sourceURL=ai-bridge.js')}); true`);
+    await cdp.evaluate(`(0, eval)(${JSON.stringify((await bridgeBundle()).code)}); true`);
     const version = await cdp.evaluate('window.__ai && window.__ai.version');
     return ok({ reloaded: true, version });
   }));

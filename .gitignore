@@ -11,3 +11,4 @@ runs/
 
 # OpenClaw exports that may land in the working dir
 .openclaw/
+dist/

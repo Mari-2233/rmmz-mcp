@@ -8,7 +8,7 @@
 // Env: PMGT_CDP_PORT (default 9333)
 import { readFile, writeFile } from 'node:fs/promises';
 import { CdpClient } from '../src/cdp.js';
-import { BRIDGE_PATH } from '../src/tools/dev.js';
+import { bridgeBundle } from '../src/bridge.js';
 
 const cdp = new CdpClient({ port: Number(process.env.PMGT_CDP_PORT || 9333) });
 const [, , a, b, c] = process.argv;
@@ -22,8 +22,7 @@ try {
     await writeFile(b || 'shot.jpg', Buffer.from(img.data, 'base64'));
     out = { saved: b || 'shot.jpg' };
   } else if (a === '--reload') {
-    const code = await readFile(BRIDGE_PATH, 'utf8');
-    await cdp.evaluate(`(0, eval)(${JSON.stringify(code + '\n//# sourceURL=ai-bridge.js')}); true`);
+    await cdp.evaluate(`(0, eval)(${JSON.stringify((await bridgeBundle()).code)}); true`);
     out = await cdp.callBridge('ping');
   } else if (a) out = await cdp.evaluate(a, { timeoutMs: 600000 });
   else { console.error('usage: eval.js <expr> | -f file | --bridge method [jsonArgs] | --shot [file] | --reload'); process.exit(2); }

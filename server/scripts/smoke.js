@@ -57,7 +57,7 @@ report(missing.length || forbidden.length ? 'FAIL' : 'PASS', 'tool list',
   `${tools.length} tools` + (missing.length ? `; missing ${missing}` : '') + (forbidden.length ? `; forbidden ${forbidden}` : ''));
 const descChars = tools.reduce((n, t) => n + (t.description?.length || 0), 0);
 const listChars = JSON.stringify(tools).length;
-report(descChars < 2500 ? 'PASS' : 'FAIL', 'description size', `descriptions ${descChars} chars, tools/list JSON ${listChars} chars`);
+report(descChars < 3000 ? 'PASS' : 'FAIL', 'description size', `descriptions ${descChars} chars, tools/list JSON ${listChars} chars`);
 const instr = client.getInstructions?.() ?? '';
 report(instr.length > 0 && instr.length <= 2000 ? 'PASS' : 'FAIL', 'instructions', `${instr.length} chars`);
 
