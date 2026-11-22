@@ -22,6 +22,13 @@ if (!document.createElement.__aiVideo) {
   document.createElement.__aiVideo = true;
 }
 
+// Pausing a movie whose play() hasn't resolved yet rejects that play() with AbortError; the engine
+// treats an unhandled rejection as fatal (error screen). That rejection is harmless here: swallow it.
+util.wrap(HTMLMediaElement.prototype, 'play', orig => function () {
+  const p = orig.apply(this, arguments);
+  return p && p.catch ? p.catch(e => { if (!(e && e.name === 'AbortError')) throw e; }) : p;
+}, '75-pause:HTMLMediaElement.play');
+
 let paused = []; // what we paused, so thaw resumes only that
 function setFrozen(on) {
   if (on === P.frozen) return;
@@ -37,7 +44,7 @@ function setFrozen(on) {
       if (window.gsap && gsap.globalTimeline) gsap.globalTimeline.pause();
     } else {
       P.frozenMs += Date.now() - P.since;
-      for (const v of paused) { try { v.play(); } catch (e) { /* ignore */ } }
+      for (const v of paused) { try { const p = v.play(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* ignore */ } }
       paused = [];
       if (window.WebAudio && WebAudio._context && WebAudio._context.state === 'suspended') WebAudio._context.resume();
       if (window.gsap && gsap.globalTimeline) gsap.globalTimeline.resume();
