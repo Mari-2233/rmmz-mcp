@@ -56,6 +56,16 @@ function roomStatus(extra) {
 }
 // New-game resets memory too.
 util.ready(() => {
+  // The AI never saves: the save folder is the player's real one. Leave save menus at once.
+  if (window.Scene_Save) util.wrap(Scene_Save.prototype, 'start', orig => function () {
+    const r = orig.apply(this, arguments);
+    if (B.enabled) {
+      B.last = { kind: 'save', spent: 0, note: 'save point: saving is disabled for the AI, menu closed', t: Date.now() };
+      if (ai._log && ai._log.push) ai._log.push('message', { text: '(Saving is disabled for the AI. The save menu was closed.)', speaker: null });
+      setTimeout(() => { if (SceneManager._scene === this) SceneManager.pop(); }, 0);
+    }
+    return r;
+  }, '60-budget:Scene_Save.start');
   util.wrap(DataManager, 'setupNewGame', orig => function () { ai.budget.reset(); return orig.apply(this, arguments); }, '60-budget:DataManager.setupNewGame');
 });
 

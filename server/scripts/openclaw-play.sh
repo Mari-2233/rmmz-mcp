@@ -3,7 +3,7 @@
 #   scripts/openclaw-play.sh [model] [max_rounds] [port]
 # Fair play: OpenClaw only sees normal (non-dev) tools; describe_event / get_variables /
 # get_switches are hidden via mcp.servers.pmgt.toolFilter. No cheats, no spoilers.
-# Stops on GAME_OVER, max rounds, or 3 rounds without progress (same map + position + log seq).
+# The model may remember + restart after a GAME_OVER. Stops on max rounds or 3 rounds without progress (same map + position + log seq).
 set -u
 MODEL="${1:-cerebras/qwen-3.8-27b}"; ROUNDS="${2:-30}"; PORT="${3:-9333}"
 OC="${OC:-$HOME/.openclaw/bin/openclaw}"
@@ -31,7 +31,6 @@ for r in $(seq 1 "$ROUNDS"); do
   p=$(probe)
   echo "r$r ${dt}s $reply" | tee -a "$PROG"
   echo "   $p" | tee -a "$PROG"
-  case "$p" in *GAME_OVER*) echo "GAME_OVER -> stop" | tee -a "$PROG"; break;; esac
   key=$(echo "$p" | grep -oE '"map":[0-9]+|"xy":\[[0-9]+,[0-9]+\]|"seq":[0-9]+' | tr -d '\n')
   if [ "$key" = "$last" ]; then same=$((same+1)); else same=0; fi; last="$key"
   [ $same -ge 3 ] && { echo "no progress for 3 rounds -> stop" | tee -a "$PROG"; break; }

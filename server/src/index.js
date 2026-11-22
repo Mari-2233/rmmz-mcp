@@ -5,7 +5,7 @@
 //   PMGT_MCP_DEV=1  → also register dev-only tools (eval_js, reload_bridge)
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { ensureBridge } from './bridge.js';
+import { ensureBridge, applyConfig } from './bridge.js';
 import { CdpClient } from './cdp.js';
 import { EventLog } from './events.js';
 import { log } from './util.js';
@@ -25,12 +25,7 @@ cdp.on('connected', t => log('CDP connected:', t.url));
 cdp.onConnect = async () => {
   const r = await ensureBridge(cdp);
   if (r) log(`bridge ${r} over CDP`);
-  if (process.env.PMGT_BACKGROUND === '1') await cdp.evaluate('window.__ai && __ai.background && __ai.background(true); true');
-  const size = /^(\d+)x(\d+)$/.exec(process.env.PMGT_WINDOW || '');
-  if (size) await cdp.evaluate(`window.__ai && __ai.windowSize && __ai.windowSize(${size[1]}, ${size[2]}); true`);
-  if (process.env.PMGT_HUD === '1') {
-    await cdp.evaluate(`window.__ai && __ai.hud && __ai.hud.show(true, ${JSON.stringify(process.env.PMGT_HUD_LABEL || '')}); true`);
-  }
+  await applyConfig(cdp);
 };
 cdp.on('hookError', e => log('bridge inject failed:', e.message));
 cdp.on('disconnected', () => log('CDP disconnected (will reconnect on next call)'));
@@ -50,7 +45,7 @@ const INSTRUCTIONS = [
   "CHOICE: choose(index) with index from message.choices[].index.",
   "TRANSFER / VIDEO / MOVING / FORCED_MOVE / BLOCKED / SCENE_CHANGING: wait.",
   "OTHER_SCENE: Scene_Item -> pick_item; else wait or tell the user.",
-  "GAME_OVER: stop and tell the user.",
+  "GAME_OVER: remember(lesson) what killed you, then restart. get_state.memory holds lessons from past runs: use them to skip what you already know.",
   "",
   "EXPLORING",
   "- list_events, then approach(event_id): walks there, faces it, interacts and returns the dialogue in ONE call.",
@@ -68,7 +63,7 @@ const INSTRUCTIONS = [
   "",
   "MODES",
   "- Hint mode (user asks for hints): give clues step by step; don't play for them.",
-  "- Play mode: act autonomously, report briefly after each milestone (room, item, puzzle); stop at GAME_OVER.",
+  "- Play mode: act autonomously, report briefly after each milestone (room, item, puzzle); after a GAME_OVER, remember + restart.",
 ].join('\n');
 // OpenClaw keeps only the first 2000 characters of server instructions.
 if (INSTRUCTIONS.length > 2000) throw new Error(`instructions too long: ${INSTRUCTIONS.length}`);

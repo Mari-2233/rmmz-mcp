@@ -4,6 +4,7 @@
 import { z } from 'zod';
 import { CdpError } from '../cdp.js';
 import { ok, safe } from '../util.js';
+import { restartGame } from '../bridge.js';
 
 const ACTION_TIMEOUT_MS = 20000; // game side guarantees < 15 s per call
 const READ_TIMEOUT_MS = 10000;
@@ -158,6 +159,19 @@ export function register({ server, cdp }) {
         event_id: z.number().int().optional(), item_id: z.number().int().optional(),
       }).describe('The next action that tests the hypothesis'),
     }, false, a => call('reflect', [a]));
+
+  tool('remember', 'Remember',
+    'GAME_OVER only: write one lesson (what killed you, what to do instead). It survives restarts; nothing else does.',
+    { lesson: z.string().describe('What happened and what to do differently next time') },
+    false, ({ lesson }) => call('remember', [lesson]));
+
+  tool('restart', 'Restart',
+    'GAME_OVER only: start a brand-new game (state, budget and notes reset; remembered lessons stay). Takes up to a minute.',
+    null, false, async () => {
+      const st = await call('currentState');
+      if (st !== 'GAME_OVER') throw new CdpError('INVALID_STATE', `restart is only allowed at GAME_OVER (now ${st})`);
+      return budgetLast(compactResult(await restartGame(cdp)));
+    });
 
   tool('ask_user', 'Ask user',
     'Ask the user a question when stuck (like asking a friend). Then end your turn and wait for the answer.',

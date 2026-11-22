@@ -15,7 +15,8 @@ ai.ALLOWED = {
   DIALOGUE: ['read_dialogue', 'advance'],
   CUTSCENE: ['read_dialogue', 'advance'],
   CHOICE: ['choose'],
-  OTHER_SCENE: ['pick_item'], // only meaningful when scene === 'Scene_Item' (B9)
+  OTHER_SCENE: ['pick_item'],
+  GAME_OVER: ['remember', 'restart'], // only meaningful when scene === 'Scene_Item' (B9)
 };
 
 // Pocket Mirror specific bits (§7). Core code must reference these, never raw IDs.
