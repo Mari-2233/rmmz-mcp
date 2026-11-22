@@ -12,3 +12,6 @@ runs/
 # OpenClaw exports that may land in the working dir
 .openclaw/
 dist/
+
+# local recording instrumentation (not shipped)
+server/scripts/hud-proxy.js
