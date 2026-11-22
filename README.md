@@ -138,7 +138,7 @@ server/scripts/openclaw-play.sh cerebras/moonshotai-kimi-k3.1-pro-trial 30 9333 
 | `PMGT_HUD` | `0` | 设为 `1` 时在游戏画面上叠加进度面板（地图、状态、预算、调用次数、思考耗时、计时） |
 | `PMGT_HUD_LABEL` | 空 | HUD 标题，如 `Kimi K3.1 · OpenClaw` |
 
-`server/scripts/openclaw-play.sh` 另外读取：`OC`（openclaw 可执行文件，默认 `~/.openclaw/bin/openclaw`）、`ROUND_TIMEOUT`（每轮秒数，默认 `1800`），以及上面的 `PMGT_CDP_HOST`。HUD 计时器只在一轮运行期间（思考、工具调用、输出）走动，轮次之间静止。
+`server/scripts/openclaw-play.sh` 另外读取：`OC`（openclaw 可执行文件，默认 `~/.openclaw/bin/openclaw`）、`ROUND_TIMEOUT`（每轮秒数，默认 `1800`）、`FAIL_WAIT`（服务端失败的一轮之后等待的秒数，默认 `20`）、`MAX_FAILS`（连续失败多少轮后停止，默认 `30`），以及上面的 `PMGT_CDP_HOST`。服务端失败的轮次（被限流、排队已满、超时、没有返回结果）会重试，既不算作“没有进展”，也不计入最大轮数。HUD 计时器只在一轮运行期间（思考、工具调用、输出）走动，轮次之间静止。
 
 演示推荐配置（游戏在另一台机器上）：
 
