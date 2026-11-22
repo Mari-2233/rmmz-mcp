@@ -1,4 +1,4 @@
-# PMGT-MCP — 让 AI 来玩 RPG Maker MZ 的解谜
+# rmmz-mcp — 让 AI 来玩 RPG Maker MZ 的解谜
 
 > **An MCP server that lets a language model play RPG Maker MZ games by reading the engine state directly, not the screen.**
 > It plays the way a person does: it explores, it misreads foreshadowing, it dies.
