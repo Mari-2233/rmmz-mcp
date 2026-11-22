@@ -16,6 +16,9 @@ probe() {
   PMGT_CDP_PORT=$PORT node "$HERE/eval.js" '(()=>{const s=__ai.getState();return {state:s.state,map:s.map&&s.map.id,mapName:s.map&&s.map.name,xy:s.player&&[s.player.x,s.player.y],seq:s.seq,items:$gameParty.items().map(i=>i.name),lastMsg:(__ai.getLog(0,["message"],200).entries.slice(-1)[0]||{}).data}})()' 2>/dev/null | tr -d '\n' | tr -s ' '
 }
 
+# HUD clock runs only while a round runs (thinking / tools / writing the reply).
+hud() { PMGT_CDP_PORT=$PORT node "$HERE/eval.js" "window.__ai && __ai.hud && __ai.hud.active($1)" >/dev/null 2>&1; }
+
 FIRST="你现在是代打模式：从当前位置开始自己玩《Pocket Mirror ~ GoldenerTraum》，目标是尽可能往前推进剧情、解开谜题。规则：只能用 pmgt 工具正常游玩；不要剧透（不要说出你还没在游戏里看到的内容）。每完成一个小目标（进入新房间、拿到道具、解开谜题）用一句话汇报。卡住时说明卡在哪、试过什么。"
 NEXT="继续往前推进。先 get_state 看清现状，再行动。"
 
@@ -24,9 +27,9 @@ echo "r0 $(probe)" | tee -a "$PROG"
 last=""; same=0
 for r in $(seq 1 "$ROUNDS"); do
   msg="$NEXT"; [ "$r" = 1 ] && msg="$FIRST"
-  t0=$(date +%s)
+  t0=$(date +%s); hud true
   "$OC" agent --model "$MODEL" --json --timeout "${ROUND_TIMEOUT:-1800}" --session-id "$SID" -m "$msg" > "$OUT/r$r.json" 2>/dev/null
-  dt=$(( $(date +%s) - t0 ))
+  hud false; dt=$(( $(date +%s) - t0 ))
   reply=$(node -e 'try{const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const m=j.result.meta.agentMeta;process.stdout.write(JSON.stringify({turns:m.assistantTurns,calls:m.bridgeCalls&&m.bridgeCalls.call,reply:j.result.payloads.map(p=>p.text).join(" ").replace(/\s+/g," ").slice(0,300)}))}catch(e){process.stdout.write("{\"error\":\"no result\"}")}' "$OUT/r$r.json")
   p=$(probe)
   echo "r$r ${dt}s $reply" | tee -a "$PROG"
