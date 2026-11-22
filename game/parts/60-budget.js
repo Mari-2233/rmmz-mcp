@@ -11,13 +11,15 @@
 // Plan   : until the planned action is done, any other paid action costs double, and each
 //          wasteful step (revisiting a tile walked since the plan, or moving farther from the
 //          plan's target by BFS distance) costs 1. Without a plan, moving is free.
-// Stuck  : after 3 reflections with an empty budget the room is "stuck": interacting is blocked;
-//          the player may leave (walk/face/approach without interact) or ask_user.
+// Stuck  : after 3 reflections with an empty budget the room is "stuck": interacting is blocked,
+//          except with doors the player has used (left through, or arrived next to): those are
+//          free, so a room whose only exits are doors never becomes a dead end. Or ask_user.
 // Visible signals only (dialogue text, inventory, map) decide refunds — never hidden switches.
 
 const B = (window.__aiBudget = window.__aiBudget || {
-  enabled: false, rooms: {}, seenLines: [], visited: [], notes: [], plan: null,
+  enabled: false, rooms: {}, seenLines: [], visited: [], notes: [], plan: null, exits: {},
 });
+B.exits = B.exits || {}; // mapId -> event ids of doors the player has used (hot-reload safe)
 const RESTORE = [0.5, 0.25, 0.12];
 const COST = { interact: 1, use_item: 2 };
 const seen = new Set(B.seenLines);
@@ -25,7 +27,7 @@ const seen = new Set(B.seenLines);
 ai.budget = {
   enable(on = true) { B.enabled = !!on; return ai.budget.status(); },
   status() { return roomStatus(); },
-  reset() { B.rooms = {}; B.seenLines = []; seen.clear(); B.visited = []; B.notes = []; B.plan = null; return true; },
+  reset() { B.rooms = {}; B.seenLines = []; seen.clear(); B.visited = []; B.notes = []; B.plan = null; B.exits = {}; return true; },
 };
 
 function interactiveCount() {
@@ -39,6 +41,15 @@ function room() {
   }
   return B.rooms[id];
 }
+// Doors the player knows: ones it left a room through, and ones next to where it arrived.
+const knownExits = (m = $gameMap.mapId()) => B.exits[m] || [];
+function learnExit(m, id) { if (m && id != null && !knownExits(m).includes(id)) (B.exits[m] = knownExits(m)).push(id); }
+function learnArrival() {
+  const m = $gameMap.mapId();
+  for (const e of $gameMap.events()) {
+    if (e && !e._erased && e.page() && e._trigger <= 2 && Math.max(Math.abs(e.x - $gamePlayer.x), Math.abs(e.y - $gamePlayer.y)) <= 1) learnExit(m, e.eventId());
+  }
+}
 function phase(r) {
   if (r.left > 0) return 'ok';
   return r.reflects >= RESTORE.length ? 'stuck' : 'think';
@@ -50,7 +61,13 @@ function roomStatus(extra) {
   if (B.plan) s.plan = B.plan.text;
   Object.assign(s, extra || {});
   if (s.phase === 'think') s.warning = 'Budget empty: only reflect is allowed (sum up clues, hypothesis, a concrete plan).';
-  else if (s.phase === 'stuck') s.warning = 'Stuck in this room: interacting is blocked. Leave the room (walk / approach with interact:false) or ask_user.';
+  else if (s.phase === 'stuck') {
+    const ex = knownExits();
+    s.exits = ex;
+    s.warning = ex.length
+      ? `Stuck in this room: interacting is blocked except with doors you have used (event ${ex.join(', ')}), which are free. Leave through one, or ask_user.`
+      : 'Stuck in this room: interacting is blocked. Leave the room (walk / approach with interact:false) or ask_user.';
+  }
   else if (r.left <= 2) s.warning = `Only ${r.left} left in this room: stop trying things at random; think about the clues first.`;
   return s;
 }
@@ -67,6 +84,13 @@ util.ready(() => {
     return r;
   }, '60-budget:Scene_Save.start');
   util.wrap(DataManager, 'setupNewGame', orig => function () { ai.budget.reset(); return orig.apply(this, arguments); }, '60-budget:DataManager.setupNewGame');
+  // Arriving in a room: the door you came through is next to you.
+  util.wrap(Game_Player.prototype, 'performTransfer', orig => function () {
+    const go = this.isTransferring();
+    const r = orig.apply(this, arguments);
+    try { if (B.enabled && go) learnArrival(); } catch (e) { /* ignore */ }
+    return r;
+  }, '60-budget:Game_Player.performTransfer');
 });
 
 // ---- novelty (visible signals only) ----
@@ -158,11 +182,15 @@ util.ready(() => {
     return r0;
   }, '60-budget:Game_Player.increaseSteps');
 });
-function guard(kind, paid) {
+function guard(kind, paid, ids) {
   if (!B.enabled) return;
   const r = room(), ph = phase(r);
   if (ph === 'think') throw new Error('BUDGET_EXHAUSTED: budget for this room is empty; call reflect first');
-  if (ph === 'stuck' && paid) throw new Error('STUCK: interacting is blocked in this room; leave the room or ask_user');
+  if (ph === 'stuck' && paid) {
+    const ex = knownExits();
+    if (ids && ids.event_id != null && ex.includes(Number(ids.event_id))) return; // a known door: always open
+    throw new Error(`STUCK: interacting is blocked in this room${ex.length ? `; only doors you have used are open (event ${ex.join(', ')})` : ''}; leave the room or ask_user`);
+  }
   if (paid && r.left <= 0) throw new Error('BUDGET_EXHAUSTED: call reflect first');
 }
 function wrapAction(name, kind, getIds, isPaid) {
@@ -171,11 +199,12 @@ function wrapAction(name, kind, getIds, isPaid) {
   const fn = async function (...args) {
     if (!B.enabled || depth > 0) { depth++; try { return await base.apply(this, args); } finally { depth--; } }
     const paid = isPaid(args);
-    guard(kind, paid);
+    const ids = getIds(args);
+    guard(kind, paid, ids);
     markVisited();
     const before = snapshot();
-    const ids = getIds(args);
     const r = room();
+    const viaExit = phase(r) === 'stuck';
     const onPlan = planMatches(kind, ids);
     depth++;
     moveCharge = { steps: 0 };
@@ -186,9 +215,10 @@ function wrapAction(name, kind, getIds, isPaid) {
       const cost = (COST[kind === 'approach' ? 'interact' : kind] || 0) * (onPlan ? 1 : 2);
       const nv = novelty(before);
       const started = res && (res.started || (res.interacted && res.interacted.started));
-      if (nv.newLines > 0 || nv.newItem || nv.newMap) { spent = 0; note = 'new information: free'; }
+      if (viaExit) { spent = 0; note = 'known door: free'; }
+      else if (nv.newLines > 0 || nv.newItem || nv.newMap) { spent = 0; note = 'new information: free'; }
       else { spent = cost; note = started ? 'nothing new happened' : 'nothing happened'; }
-      if (!onPlan) note += ' (off-plan: double cost)';
+      if (!onPlan && !viaExit) note += ' (off-plan: double cost)';
       r.left = Math.max(0, r.left - spent);
       const bonus = (nv.newItem ? 2 : 0) + (nv.newMap ? 2 : 0);
       if (nv.newItem) for (const k of Object.keys(B.rooms)) if (+k !== $gameMap.mapId()) B.rooms[k].left += 2;
@@ -198,6 +228,7 @@ function wrapAction(name, kind, getIds, isPaid) {
       const nv = novelty(before);
       if (nv.newMap) { room().left += 2; note = 'new room (+2)'; }
     }
+    if ($gameMap.mapId() !== before.map && ids.event_id != null) learnExit(before.map, Number(ids.event_id));
     if (mv) { spent += mv; note = (note ? note + '; ' : '') + `${mv} wasteful step(s) under plan (revisit / farther): -${mv}`; }
     B.last = { kind, spent, note, t: Date.now() };
     if (res && typeof res === 'object') {
@@ -226,7 +257,7 @@ if (!ai.allowedActions.__budgeted) {
     if (!B.enabled || (state || ai.currentState()) !== 'EXPLORE') return list;
     const ph = phase(room());
     if (ph === 'think') return ['reflect'];
-    if (ph === 'stuck') return ['walk', 'face', 'approach', 'ask_user'];
+    if (ph === 'stuck') return ['walk', 'face', 'approach', 'ask_user'].concat(knownExits().length ? ['interact'] : []);
     return list.concat(['reflect']);
   };
   ai.allowedActions.__budgeted = true;
