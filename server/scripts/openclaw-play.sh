@@ -4,6 +4,7 @@
 # Fair play: OpenClaw only sees normal (non-dev) tools; describe_event / get_variables /
 # get_switches are hidden via mcp.servers.pmgt.toolFilter. No cheats, no spoilers.
 # The model may remember + restart after a GAME_OVER. Stops on max rounds or 3 rounds without progress (same map + position + log seq).
+# Rounds the provider failed (rate limited, queue full, timed out) are retried after FAIL_WAIT s (20) and don't count.
 set -u
 MODEL="${1:-cerebras/qwen-3.8-27b}"; ROUNDS="${2:-30}"; PORT="${3:-9333}"
 OC="${OC:-$HOME/.openclaw/bin/openclaw}"
@@ -25,7 +26,11 @@ NEXT="继续往前推进。先 get_state 看清现状，再行动。"
 echo "model=$MODEL port=$PORT session=$SID start=$(date +%T)" | tee "$PROG"
 echo "r0 $(probe)" | tee -a "$PROG"
 last=""; same=0
-for r in $(seq 1 "$ROUNDS"); do
+played=0; r=0
+# Provider-failed rounds count neither as "no progress" nor towards max_rounds (at most MAX_FAILS in a row).
+fails=0
+while [ "$played" -lt "$ROUNDS" ]; do
+  r=$((r+1))
   msg="$NEXT"; [ "$r" = 1 ] && msg="$FIRST"
   t0=$(date +%s); hud true
   "$OC" agent --model "$MODEL" --json --timeout "${ROUND_TIMEOUT:-1800}" --session-id "$SID" -m "$msg" > "$OUT/r$r.json" 2>/dev/null
@@ -37,7 +42,14 @@ for r in $(seq 1 "$ROUNDS"); do
   # probe output is pretty-printed ("map": 26): allow spaces, or every round looks "unchanged".
   # A round that returned nothing (provider error, e.g. rate limited) says nothing about the model:
   # don't count it as "no progress"; give the provider a moment before the next round.
-  if [ ! -s "$OUT/r$r.json" ]; then echo "   (round failed: no result) -> retry in ${FAIL_WAIT:-20}s" | tee -a "$PROG"; sleep "${FAIL_WAIT:-20}"; continue; fi
+  # Also a round the provider failed (rate limited / queue full / timed out): the reply is an error.
+  if [ ! -s "$OUT/r$r.json" ] || echo "$reply" | grep -q '"error":"no result"' || \
+     grep -qiE 'rate.?limit|queue_exceeded|too_many_requests|"status": ?429|couldn.t be completed|timed out before a response' "$OUT/r$r.json"; then
+    fails=$((fails+1))
+    [ "$fails" -ge "${MAX_FAILS:-30}" ] && { echo "provider failed $fails rounds in a row -> stop" | tee -a "$PROG"; break; }
+    echo "   (round failed on the provider side) -> not counted, retry in ${FAIL_WAIT:-20}s" | tee -a "$PROG"; sleep "${FAIL_WAIT:-20}"; continue
+  fi
+  fails=0; played=$((played+1))
   key=$(echo "$p" | grep -oE '"(map|seq)": ?[0-9]+|"xy": ?\[ ?[0-9]+, ?[0-9]+ ?\]' | tr -d ' \n')
   [ -z "$key" ] && key="noprobe-$r"   # can't read the game: don't count it as "no progress"
   if [ "$key" = "$last" ]; then same=$((same+1)); else same=0; fi; last="$key"
