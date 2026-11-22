@@ -130,6 +130,25 @@ server/scripts/openclaw-play.sh cerebras/moonshotai-kimi-k3.1-pro-trial 30 9333 
 | `PMGT_CDP_HOST` | `127.0.0.1` | 游戏调试端口所在的主机 |
 | `PMGT_CDP_PORT` | `9333` | 游戏调试端口 |
 | `PMGT_MCP_DEV` | `0` | 设为 `1` 时开启开发工具（`eval_js`、`reload_bridge`）。**给 AI 玩时不要开启** |
+| `PMGT_BUDGET` | `0` | 设为 `1` 进入 AI 游玩模式：行动预算与 reflect、隐藏系统事件、禁止存档、死亡记忆与 `restart`；连接时游戏若还在开机界面，会自动过掉开机画面并开新局 |
+| `PMGT_AUTOPAUSE` | `0` | 设为 `1` 时自动暂停：只有动作工具执行期间游戏才运行，模型思考时画面、事件、敌人、计时器、声音、视频全部冻结 |
+| `PMGT_VIEW_RADIUS` | `0`（不限） | 视野半径（格，以屏幕中心为准）：`list_events` 只返回看见过的事件、从近到远排序，`map_grid` 视野外显示 `?`；寻路仍按全图 |
+| `PMGT_BACKGROUND` | `0` | 设为 `1` 时失去焦点/最小化也继续运行（绕过 VisuMZ 的 RequireFocus） |
+| `PMGT_WINDOW` | 不改 | 连接时把游戏窗口设成指定大小，如 `1280x720` |
+| `PMGT_HUD` | `0` | 设为 `1` 时在游戏画面上叠加进度面板（地图、状态、预算、调用次数、思考耗时、计时） |
+| `PMGT_HUD_LABEL` | 空 | HUD 标题，如 `Kimi K3.1 · OpenClaw` |
+
+`server/scripts/openclaw-play.sh` 另外读取：`OC`（openclaw 可执行文件，默认 `~/.openclaw/bin/openclaw`）、`ROUND_TIMEOUT`（每轮秒数，默认 `1800`），以及上面的 `PMGT_CDP_HOST`。HUD 计时器只在一轮运行期间（思考、工具调用、输出）走动，轮次之间静止。
+
+演示推荐配置（游戏在另一台机器上）：
+
+```json5
+env: {
+  PMGT_CDP_HOST: "<游戏机器 IP>", PMGT_CDP_PORT: "9334",
+  PMGT_BUDGET: "1", PMGT_AUTOPAUSE: "1", PMGT_VIEW_RADIUS: "8",
+  PMGT_BACKGROUND: "1", PMGT_HUD: "1", PMGT_HUD_LABEL: "Kimi K3.1 · OpenClaw",
+}
+```
 
 ## MCP 工具
 
@@ -139,7 +158,10 @@ server/scripts/openclaw-play.sh cerebras/moonshotai-kimi-k3.1-pro-trial 30 9333 
 | `list_events` / `map_grid` / `list_items` | 地图事件（含 `checked`）、通行性字符画、道具栏 |
 | `approach` | **一次调用**：走到事件（或坐标）旁、转向、交互、读完对白 |
 | `read_dialogue` | 一次推进并返回整段对白 |
-| `walk` / `face` / `interact` / `advance` / `choose` / `wait` | 细粒度控制 |
+| `walk` / `face` / `interact` / `advance` / `choose` / `wait` | 细粒度控制（`walk` / `approach` 默认疾跑，`run:false` 改为走路） |
+| `reflect` | 预算用尽时整理线索、提出假设和一个具体计划，恢复部分预算（AI 游玩模式） |
+| `ask_user` | 卡住时向用户求助 |
+| `remember` / `restart` | GAME_OVER 后记下教训（跨局保留）并重开新局（AI 游玩模式） |
 | `use_item` / `pick_item` | 对事件使用道具 / 在事件弹出的道具菜单里选择（只能用实际持有的道具） |
 | `get_log` | 最近发生的事（对白、道具、切图、状态变化） |
 | `describe_event` / `get_variables` / `get_switches` | 读事件脚本、变量、开关（**会剧透**，公平游玩时建议隐藏） |
