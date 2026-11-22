@@ -35,6 +35,9 @@ for r in $(seq 1 "$ROUNDS"); do
   echo "r$r ${dt}s $reply" | tee -a "$PROG"
   echo "   $p" | tee -a "$PROG"
   # probe output is pretty-printed ("map": 26): allow spaces, or every round looks "unchanged".
+  # A round that returned nothing (provider error, e.g. rate limited) says nothing about the model:
+  # don't count it as "no progress"; give the provider a moment before the next round.
+  if [ ! -s "$OUT/r$r.json" ]; then echo "   (round failed: no result) -> retry in ${FAIL_WAIT:-20}s" | tee -a "$PROG"; sleep "${FAIL_WAIT:-20}"; continue; fi
   key=$(echo "$p" | grep -oE '"(map|seq)": ?[0-9]+|"xy": ?\[ ?[0-9]+, ?[0-9]+ ?\]' | tr -d ' \n')
   [ -z "$key" ] && key="noprobe-$r"   # can't read the game: don't count it as "no progress"
   if [ "$key" = "$last" ]; then same=$((same+1)); else same=0; fi; last="$key"
