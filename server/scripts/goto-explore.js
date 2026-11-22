@@ -43,7 +43,16 @@ const code = `(async () => {
       // Skip like a natural end: pause, then fire the element's own 'ended' event (the engine and
       // plugins listen there). Don't seek near the end: the decoder can stall there with a white
       // frame and 'ended' never fires (white-screen freeze, 05:40).
-      try { const v = Video._element; v.pause(); v.dispatchEvent(new Event('ended')); if (Video._isVisible()) Video._onEnd(); } catch (e) {}
+      // Detach the engine's late handlers first: a load finishing later would show the video again
+      // (onloadeddata -> play), and a late load failure throws LoadError (crash seen 10:01 on Linux).
+      try {
+        const v = Video._element;
+        v.onloadeddata = null; v.onerror = null;
+        v.pause(); Video._loading = false;
+        v.dispatchEvent(new Event('ended'));
+        if (Video._isVisible()) Video._onEnd();
+        v.removeAttribute('src'); v.load(); // stop the background download
+      } catch (e) {}
       await sleep(300); stable = 0; continue;
     }
     const sc = SceneManager._scene;

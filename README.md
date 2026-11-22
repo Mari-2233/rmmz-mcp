@@ -1,6 +1,9 @@
 # PMGT-MCP — 让 AI 来玩 RPG Maker MZ 的解谜
 
-> **An MCP server that lets a language model play RPG Maker MZ games by reading the engine state directly, not the screen.** It observes the live game, walks grid by grid, interacts with events, advances dialogue, makes choices and uses items — and it is deliberately unable to teleport, grant items or flip switches.
+> **An MCP server that lets a language model play RPG Maker MZ games by reading the engine state directly, not the screen.**
+> It plays the way a person does: it explores, it misreads foreshadowing, it dies.
+> It can only act: no teleporting, no granting items, no flipping switches.
+> If the game can't do it, neither can the model.
 
 一个 [MCP（Model Context Protocol）](https://modelcontextprotocol.io) 服务，让 AI agent **观察** RPG Maker MZ 游戏的状态、**逐格移动**、**与事件交互、推进对白、做出选择、使用道具**，从而辅助（或代替）玩家解谜。比赛中使用 **OpenClaw + Cerebras 上的 Kimi K3.1 Pro**。
 

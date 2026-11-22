@@ -8,7 +8,9 @@
 //          coming back does not refill it). A new item gives every room +2 (new possibilities).
 // Empty  : only `reflect` is allowed. reflect #1/#2/#3 in a room restores 50/25/12% of the room
 //          max, must differ from the previous reflection and must name a concrete next action.
-// Plan   : until the planned action is done, any other paid action costs double.
+// Plan   : until the planned action is done, any other paid action costs double, and each
+//          wasteful step (revisiting a tile walked since the plan, or moving farther from the
+//          plan's target by BFS distance) costs 1. Without a plan, moving is free.
 // Stuck  : after 3 reflections with an empty budget the room is "stuck": interacting is blocked;
 //          the player may leave (walk/face/approach without interact) or ask_user.
 // Visible signals only (dialogue text, inventory, map) decide refunds — never hidden switches.
@@ -92,6 +94,60 @@ function planMatches(kind, ids) {
 
 // ---- charging wrapper ----
 let depth = 0;
+
+// ---- movement cost under a plan ----
+// Only while a plan exists in this room, and only for moves the AI makes through our tools.
+// Per step at most 1: stepping on a tile already walked since the plan was set, OR the BFS
+// distance to the plan's target growing. Before a plan, moving is always free (exploration).
+let moveCharge = null; // { steps } during an outermost AI action
+function planTarget() {
+  const p = B.plan;
+  if (!p || p.map !== $gameMap.mapId() || p.event_id == null) return null;
+  const e = $gameMap.event(p.event_id);
+  return e ? { x: e.x, y: e.y } : null;
+}
+function planDistance() {
+  const t = planTarget();
+  if (!t) return null;
+  const W = $gameMap.width(), key = (x, y) => y * W + x;
+  const seenT = new Set([key($gamePlayer.x, $gamePlayer.y)]);
+  let frontier = [[$gamePlayer.x, $gamePlayer.y]], d = 0;
+  while (frontier.length && seenT.size < 6000) {
+    const next = [];
+    for (const [x, y] of frontier) {
+      if (Math.abs(x - t.x) + Math.abs(y - t.y) <= 1) return d; // next to (or on) the target
+      for (const [dir, dx, dy] of [[2, 0, 1], [4, -1, 0], [6, 1, 0], [8, 0, -1]]) {
+        const nx = x + dx, ny = y + dy, k = key(nx, ny);
+        if (seenT.has(k) || !$gameMap.isValid(nx, ny) || !$gamePlayer.canPass(x, y, dir)) continue;
+        seenT.add(k); next.push([nx, ny]);
+      }
+    }
+    frontier = next; d++;
+  }
+  return null; // unreachable: only the revisit rule applies
+}
+function startPlanTracking() {
+  B.planTiles = [`${$gamePlayer.x},${$gamePlayer.y}`];
+  B.planDist = planDistance();
+}
+util.ready(() => {
+  util.wrap(Game_Player.prototype, 'increaseSteps', orig => function () {
+    const r0 = orig.apply(this, arguments);
+    try {
+      if (B.enabled && moveCharge && B.plan && B.plan.map === $gameMap.mapId()) {
+        const k = `${this.x},${this.y}`;
+        const tiles = B.planTiles || (B.planTiles = []);
+        const revisit = tiles.includes(k);
+        const dist = planDistance();
+        const farther = B.planDist != null && dist != null && dist > B.planDist;
+        if (revisit || farther) { const rm = room(); rm.left = Math.max(0, rm.left - 1); moveCharge.steps++; }
+        if (!revisit) tiles.push(k);
+        B.planDist = dist;
+      }
+    } catch (e) { /* never break movement */ }
+    return r0;
+  }, '60-budget:Game_Player.increaseSteps');
+});
 function guard(kind, paid) {
   if (!B.enabled) return;
   const r = room(), ph = phase(r);
@@ -112,8 +168,9 @@ function wrapAction(name, kind, getIds, isPaid) {
     const r = room();
     const onPlan = planMatches(kind, ids);
     depth++;
-    let res;
-    try { res = await base.apply(this, args); } finally { depth--; }
+    moveCharge = { steps: 0 };
+    let res, mv = 0;
+    try { res = await base.apply(this, args); } finally { depth--; mv = moveCharge.steps; moveCharge = null; }
     let spent = 0, note;
     if (paid) {
       const cost = (COST[kind === 'approach' ? 'interact' : kind] || 0) * (onPlan ? 1 : 2);
@@ -131,6 +188,7 @@ function wrapAction(name, kind, getIds, isPaid) {
       const nv = novelty(before);
       if (nv.newMap) { room().left += 2; note = 'new room (+2)'; }
     }
+    if (mv) { spent += mv; note = (note ? note + '; ' : '') + `${mv} wasteful step(s) under plan (revisit / farther): -${mv}`; }
     B.last = { kind, spent, note, t: Date.now() };
     if (res && typeof res === 'object') {
       res.state = ai.getState(); // refresh so allowed_actions reflects the new budget
@@ -201,6 +259,7 @@ ai.reflect = function (r = {}) {
   rm.lastReflect = key;
   B.last = { kind: 'reflect', spent: 0, note, t: Date.now() };
   B.plan = { map: $gameMap.mapId(), action: p.action === 'approach' ? 'interact' : p.action, event_id: p.event_id ?? null, item_id: p.item_id ?? null, text };
+  startPlanTracking();
   return { noted: text, state: ai.getState(), budget: roomStatus({ restored, note }) };
 };
 

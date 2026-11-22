@@ -27,7 +27,8 @@ if (ai.listEvents && !ai.listEvents.__withChecked) {
     const list = base.apply(this, a);
     const m = checked[$gameMap.mapId()] || {};
     for (const e of list) e.checked = m[e.id] || 0;
-    return list;
+    // Unchecked events first (then by distance, as before): fewer repeat visits.
+    return list.map((e, i) => [e, i]).sort((a, b) => (a[0].checked > 0) - (b[0].checked > 0) || a[1] - b[1]).map(x => x[0]);
   };
   ai.listEvents.__withChecked = true;
 }
