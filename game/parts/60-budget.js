@@ -79,10 +79,14 @@ util.ready(() => {
     if (B.enabled) {
       B.last = { kind: 'save', spent: 0, note: 'save point: saving is disabled for the AI, menu closed', t: Date.now() };
       if (ai._log && ai._log.push) ai._log.push('message', { text: '(Saving is disabled for the AI. The save menu was closed.)', speaker: null });
-      setTimeout(() => { if (SceneManager._scene === this) SceneManager.pop(); }, 0);
     }
     return r;
   }, '60-budget:Scene_Save.start');
+  // Leave the save menu from the game loop (a one-off timer can be lost, e.g. while paused).
+  util.onFrame(() => {
+    const sc = SceneManager._scene;
+    if (B.enabled && window.Scene_Save && sc instanceof Scene_Save && sc._started && !SceneManager.isSceneChanging()) SceneManager.pop();
+  });
   util.wrap(DataManager, 'setupNewGame', orig => function () { ai.budget.reset(); return orig.apply(this, arguments); }, '60-budget:DataManager.setupNewGame');
   // Arriving in a room: the door you came through is next to you.
   util.wrap(Game_Player.prototype, 'performTransfer', orig => function () {

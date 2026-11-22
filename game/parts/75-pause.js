@@ -45,6 +45,23 @@ function setFrozen(on) {
   } catch (e) { console.error('[ai] pause', e); }
 }
 const idle = () => P.auto && P.depth === 0 && !window.__aiBooting;
+// Don't freeze in the middle of a scene change (e.g. the save menu the AI mode is closing):
+// let the game finish it first, then freeze (at most ~3 s).
+const unsettled = () => {
+  try {
+    const sc = SceneManager._scene;
+    return !!(SceneManager._nextScene || SceneManager.isSceneChanging() || (sc && !sc._started) ||
+      (window.Scene_Save && sc instanceof Scene_Save) ||
+      (ai.rawState && ai.currentState() !== ai.rawState())); // debounced state still catching up
+  } catch (e) { return false; }
+};
+let settleTimer = null;
+function freezeWhenSettled(t0 = Date.now()) {
+  clearTimeout(settleTimer); settleTimer = null;
+  if (!idle()) return;
+  if (unsettled() && Date.now() - t0 < 3000) { setFrozen(false); settleTimer = setTimeout(() => freezeWhenSettled(t0), 100); return; }
+  setFrozen(true);
+}
 
 util.ready(() => {
   // No game frames while frozen; the canvas keeps rendering (the HUD and picture stay up).
@@ -59,7 +76,7 @@ util.ready(() => {
 });
 
 ai.pause = {
-  auto(on = true) { P.auto = !!on; setFrozen(idle()); return ai.pause.status(); },
+  auto(on = true) { P.auto = !!on; if (idle()) freezeWhenSettled(); else setFrozen(false); return ai.pause.status(); },
   freeze() { setFrozen(true); return ai.pause.status(); },
   thaw() { setFrozen(false); return ai.pause.status(); },
   status() { return { auto: P.auto, frozen: P.frozen, frozen_s: Math.round((P.frozenMs + (P.frozen ? Date.now() - P.since : 0)) / 1000) }; },
@@ -85,7 +102,7 @@ for (const name of ACTIONS) {
     try { return await base.apply(this, args); } finally {
       if (ri != null) window.__aiRun = prevRun;
       P.depth = Math.max(0, P.depth - 1);
-      if (idle()) setFrozen(true);
+      if (idle()) freezeWhenSettled();
     }
   };
   fn.__paused = true;
