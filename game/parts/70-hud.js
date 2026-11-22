@@ -41,7 +41,7 @@ function render() {
   const note = (B.notes && B.notes.length) ? B.notes[B.notes.length - 1].text.replace(/^\[map \d+\]\s*/, '') : '';
   d.innerHTML =
     `<div style="font-weight:700;font-size:14px;margin-bottom:4px">🎮 ${esc(H.label || 'AI player')}</div>` +
-    `<div>📍 ${esc(map)} · <b>${esc(s.state || '')}</b></div>` +
+    `<div>📍 ${esc(map)} · <b>${esc(s.state || '')}</b>${s.paused ? ' · <span style="color:#8cf">⏸ paused</span>' : ''}</div>` +
     (b.max ? `<div style="margin:4px 0">💰 budget ${b.left}/${b.max} ${b.phase !== 'ok' ? '· <b>' + esc(b.phase) + '</b>' : ''}` +
       `<div style="height:6px;background:#333;border-radius:3px;margin-top:2px"><div style="height:6px;width:${pct}%;background:${barColor};border-radius:3px"></div></div></div>` : '') +
     `<div>🧰 items ${items} · 🗺 rooms ${(B.visited || []).length} · 🔧 calls ${H.calls} · ⏱ ${H.start ? clock(Date.now() - H.start) : '0:00'}</div>` +
@@ -51,7 +51,9 @@ function render() {
 }
 
 let tick = 0;
-util.onFrame(() => { if (H.on && ++tick % 15 === 0) render(); });
+// A timer, not a frame hook: the HUD keeps updating while the game is paused for the model.
+if (window.__aiHudTimer) clearInterval(window.__aiHudTimer);
+window.__aiHudTimer = setInterval(() => { if (H.on) { try { render(); } catch (e) { /* ignore */ } } }, 250);
 
 ai.hud = {
   show(on = true, label) {

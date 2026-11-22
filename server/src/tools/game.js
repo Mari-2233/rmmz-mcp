@@ -122,8 +122,10 @@ export function register({ server, cdp }) {
   // ---- S2: actions (each returns the new state) ----
   tool('walk', 'Walk',
     'Walk N tiles in a straight line (EXPLORE only). Stops early if blocked or an event starts. Returns path, stop reason and the new state.',
-    { direction: Dir, steps: z.number().int().min(1).max(20).optional().describe('Tiles (default 1)') },
-    false, ({ direction, steps = 1 }) => call('walk', [direction, steps], ACTION_TIMEOUT_MS));
+    {
+      direction: Dir, steps: z.number().int().min(1).max(20).optional().describe('Tiles (default 1)'),
+      run: z.boolean().optional().describe('Sprint (default true)'),
+    }, false, ({ direction, steps = 1, run }) => call('walk', [direction, steps, { run }], ACTION_TIMEOUT_MS));
 
   tool('face', 'Face', 'Turn the player without moving (EXPLORE only). Returns the new state (check facing).',
     { direction: Dir }, false, ({ direction }) => call('face', [direction], ACTION_TIMEOUT_MS));
@@ -140,9 +142,10 @@ export function register({ server, cdp }) {
       x: z.number().int().min(0).optional(), y: z.number().int().min(0).optional(),
       interact: z.boolean().optional().describe('Interact on arrival (default true)'),
       read: z.boolean().optional().describe('Read dialogue after interacting (default true)'),
-    }, false, ({ event_id, x, y, interact, read }) => {
+      run: z.boolean().optional().describe('Sprint (default true)'),
+    }, false, ({ event_id, x, y, interact, read, run }) => {
       const target = event_id != null ? { eventId: event_id } : { x, y };
-      return call('approach', [target, { interact, read }], ACTION_TIMEOUT_MS);
+      return call('approach', [target, { interact, read, run }], ACTION_TIMEOUT_MS);
     });
 
   tool('read_dialogue', 'Read dialogue',

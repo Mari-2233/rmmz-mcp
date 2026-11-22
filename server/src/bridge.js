@@ -36,6 +36,7 @@ export async function applyConfig(cdp) {
   const size = /^(\d+)x(\d+)$/.exec(env.PMGT_WINDOW || '');
   if (size) await cdp.evaluate(`window.__ai && __ai.windowSize && __ai.windowSize(${size[1]}, ${size[2]}); true`);
   if (env.PMGT_BUDGET === '1') await cdp.evaluate('window.__ai && __ai.budget && __ai.budget.enable(true); true');
+  if (env.PMGT_AUTOPAUSE === '1') await cdp.evaluate('window.__ai && __ai.pause && __ai.pause.auto(true); true');
   if (env.PMGT_HUD === '1') await cdp.evaluate(`window.__ai && __ai.hud && __ai.hud.show(true, ${JSON.stringify(env.PMGT_HUD_LABEL || '')}); true`);
   // AI play mode: a game still on its boot screens (fresh launch) is started for the model, the
   // same way restart does it. Not awaited; the model sees BOOT and waits.

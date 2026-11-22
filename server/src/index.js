@@ -38,6 +38,7 @@ const INSTRUCTIONS = [
   "1. Start with get_state. Call only action tools listed in allowed_actions; read tools work any time.",
   "2. Actions return the new state; don't call get_state after them or poll it: use wait.",
   "3. Coordinates: x grows right, y grows down. up = y-1, down = y+1.",
+  "4. The game is paused while you think; it only runs during actions. walk/approach sprint by default.",
   "",
   "STATES",
   "EXPLORE: approach, walk, face, interact, use_item.",
