@@ -10,7 +10,9 @@
   "scripts": {
     "start": "node src/index.js",
     "eval": "node scripts/eval.js",
-    "smoke": "node scripts/smoke.js"
+    "smoke": "node scripts/smoke.js",
+    "test": "node --test src/evidence.test.js",
+    "evidence-fixture": "node scripts/evidence-fixture.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
