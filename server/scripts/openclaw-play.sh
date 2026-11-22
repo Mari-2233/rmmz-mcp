@@ -25,13 +25,15 @@ last=""; same=0
 for r in $(seq 1 "$ROUNDS"); do
   msg="$NEXT"; [ "$r" = 1 ] && msg="$FIRST"
   t0=$(date +%s)
-  "$OC" agent --model "$MODEL" --json --timeout 600 --session-id "$SID" -m "$msg" > "$OUT/r$r.json" 2>/dev/null
+  "$OC" agent --model "$MODEL" --json --timeout "${ROUND_TIMEOUT:-1800}" --session-id "$SID" -m "$msg" > "$OUT/r$r.json" 2>/dev/null
   dt=$(( $(date +%s) - t0 ))
   reply=$(node -e 'try{const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const m=j.result.meta.agentMeta;process.stdout.write(JSON.stringify({turns:m.assistantTurns,calls:m.bridgeCalls&&m.bridgeCalls.call,reply:j.result.payloads.map(p=>p.text).join(" ").replace(/\s+/g," ").slice(0,300)}))}catch(e){process.stdout.write("{\"error\":\"no result\"}")}' "$OUT/r$r.json")
   p=$(probe)
   echo "r$r ${dt}s $reply" | tee -a "$PROG"
   echo "   $p" | tee -a "$PROG"
-  key=$(echo "$p" | grep -oE '"map":[0-9]+|"xy":\[[0-9]+,[0-9]+\]|"seq":[0-9]+' | tr -d '\n')
+  # probe output is pretty-printed ("map": 26): allow spaces, or every round looks "unchanged".
+  key=$(echo "$p" | grep -oE '"(map|seq)": ?[0-9]+|"xy": ?\[ ?[0-9]+, ?[0-9]+ ?\]' | tr -d ' \n')
+  [ -z "$key" ] && key="noprobe-$r"   # can't read the game: don't count it as "no progress"
   if [ "$key" = "$last" ]; then same=$((same+1)); else same=0; fi; last="$key"
   [ $same -ge 3 ] && { echo "no progress for 3 rounds -> stop" | tee -a "$PROG"; break; }
 done
