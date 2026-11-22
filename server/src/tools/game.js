@@ -3,19 +3,17 @@
 // Deliberately NOT provided: set_switch, set_variable, teleport, start_event, skip_video.
 import { z } from 'zod';
 import { CdpError } from '../cdp.js';
-import { ok, safe } from '../util.js';
+import { ok, recorded, safe } from '../util.js';
 import { restartGame } from '../bridge.js';
+import { FAIR_PLAY_HIDDEN, STATES } from '../state-contract.js';
 
 const ACTION_TIMEOUT_MS = 20000; // game side guarantees < 15 s per call
 const READ_TIMEOUT_MS = 10000;
-
-const STATES = ['BOOT', 'SCENE_CHANGING', 'GAME_OVER', 'OTHER_SCENE', 'TRANSFER', 'VIDEO', 'CHOICE',
-  'NUMBER_INPUT', 'ITEM_SELECT', 'DIALOGUE', 'CUTSCENE', 'FORCED_MOVE', 'MOVING', 'EXPLORE', 'BLOCKED'];
 const Dir = z.enum(['up', 'down', 'left', 'right']);
 const Ids = z.array(z.number().int().min(1)).max(200);
 
 // Drop null/undefined fields of a state snapshot (saves tokens; absent == null).
-function compactState(s) {
+export function compactState(s) {
   if (!s || typeof s !== 'object' || Array.isArray(s)) return s;
   const out = {};
   for (const [k, v] of Object.entries(s)) if (v !== null && v !== undefined) out[k] = v;
@@ -23,7 +21,7 @@ function compactState(s) {
 }
 
 // Results that are snapshots themselves, or carry one in `.state`.
-function compactResult(r) {
+export function compactResult(r) {
   if (!r || typeof r !== 'object' || Array.isArray(r)) return r;
   if (typeof r.state === 'string' && 'allowed_actions' in r) return compactState(r); // a snapshot
   if (r.state && typeof r.state === 'object') return { ...r, state: compactState(r.state) };
@@ -31,13 +29,13 @@ function compactResult(r) {
 }
 
 // The model's attention follows the end of a tool result: keep `budget` as the last field.
-function budgetLast(r) {
+export function budgetLast(r) {
   if (!r || typeof r !== 'object' || Array.isArray(r) || !('budget' in r)) return r;
   const { budget, ...rest } = r;
   return { ...rest, budget };
 }
 
-export function register({ server, cdp }) {
+export function register({ server, cdp, fairPlay = false, transcript = null }) {
   // Call window.__ai[method]; map "bridge/method missing" to NOT_READY so the model gets a clear error.
   // PMGT_BUDGET=1: make sure the in-game action budget is on (survives game restarts / bridge reloads).
   const BUDGET = process.env.PMGT_BUDGET === '1';
@@ -68,10 +66,26 @@ export function register({ server, cdp }) {
     }
   }
 
-  const tool = (name, title, description, inputSchema, readOnly, handler) => server.registerTool(name, {
-    title, description, ...(inputSchema ? { inputSchema } : {}),
-    annotations: readOnly ? { readOnlyHint: true } : { readOnlyHint: false, destructiveHint: false },
-  }, safe(async args => ok(await handler(args))));
+  // PMGT_FAIR_PLAY=1: spoiler tools are not registered at all, so no client setting can
+  // expose them. The client toolFilter in the README stays useful as a second layer.
+  // Two tools do not fit the read/action defaults: restart wipes the run, ask_user never
+  // leaves the server.
+  const ANNOTATION_OVERRIDES = {
+    restart: { destructiveHint: true },
+    ask_user: { openWorldHint: false, idempotentHint: true },
+  };
+  const tool = (name, title, description, inputSchema, readOnly, handler) => {
+    if (fairPlay && FAIR_PLAY_HIDDEN.includes(name)) return;
+    server.registerTool(name, {
+      title, description, ...(inputSchema ? { inputSchema } : {}),
+      annotations: {
+        ...(readOnly
+          ? { readOnlyHint: true, idempotentHint: true, openWorldHint: true }
+          : { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }),
+        ...(ANNOTATION_OVERRIDES[name] || {}),
+      },
+    }, recorded(transcript, name, safe(async args => ok(await handler(args)))));
+  };
 
   // ---- S1: read-only ----
   tool('get_state', 'Get state',

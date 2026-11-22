@@ -34,4 +34,34 @@ export function safe(handler) {
   };
 }
 
+// Wrap a handler so each call is appended to the session transcript (see transcript.js).
+// With no transcript configured the handler is returned unchanged. Recording sits outside
+// safe(), so it sees the final result, including readable tool errors. Recording failures
+// never break a tool call: Transcript.record handles its own errors.
+export function recorded(transcript, name, handler) {
+  if (!transcript) return handler;
+  return async (args, extra) => {
+    const t0 = Date.now();
+    // Tools without an inputSchema are called by the SDK as handler(extra): the first
+    // argument is request context (AbortSignal, requestId, callbacks), not tool arguments.
+    // None of this server's tools take a `signal` argument, so treat that shape as no args.
+    const toolArgs = args && typeof args === 'object' && 'signal' in args && 'requestId' in args ? {} : (args ?? {});
+    let result;
+    try {
+      result = await handler(args, extra);
+    } catch (e) {
+      // Handlers wrapped in safe() do not throw today. Record anyway if one ever does.
+      transcript.record({ tool: name, args: toolArgs, ok: false, error: 'THREW', ms: Date.now() - t0, result: { error: String(e?.message || e) } });
+      throw e;
+    }
+    let error = null;
+    if (result?.isError) {
+      try { error = JSON.parse(result.content?.[0]?.text || '{}').error || 'ERROR'; }
+      catch { error = 'ERROR'; }
+    }
+    transcript.record({ tool: name, args: toolArgs, ok: !result?.isError, error, ms: Date.now() - t0, result });
+    return result;
+  };
+}
+
 export const log = (...a) => console.error('[pmgt-mcp]', ...a); // stdout is reserved for MCP JSON-RPC

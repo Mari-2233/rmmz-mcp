@@ -1,0 +1,29 @@
+{
+  "name": "mirror",
+  "description": "The README benchmark task: look at the room, walk to the mirror (event 9), examine it and read the dialogue. Live runs need the game started and advanced to the first playable room first (scripts/goto-explore.js). With --fake the same steps run against the test fixture.",
+  "source": "README.md: Measured (mirror task)",
+  "steps": [
+    {
+      "name": "look at the room",
+      "tool": "get_state",
+      "args": {},
+      "expect": [{ "path": "state", "equals": "EXPLORE" }]
+    },
+    {
+      "name": "find the mirror",
+      "tool": "list_events",
+      "args": { "radius": 8 },
+      "expect": [{ "path": "$", "includes": "Mirror" }]
+    },
+    {
+      "name": "examine the mirror",
+      "tool": "approach",
+      "args": { "event_id": 9 },
+      "expect": [
+        { "path": "reached", "equals": true },
+        { "path": "dialogue", "includes": "big mirror" },
+        { "path": "state.state", "equals": "EXPLORE" }
+      ]
+    }
+  ]
+}

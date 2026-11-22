@@ -10,7 +10,10 @@
   "scripts": {
     "start": "node src/index.js",
     "eval": "node scripts/eval.js",
-    "smoke": "node scripts/smoke.js"
+    "smoke": "node scripts/smoke.js",
+    "test": "node --test test/state-contract.test.js test/util.test.js test/transcript.test.js test/capabilities.test.js test/integration.test.js",
+    "tasks": "node scripts/run-tasks.js",
+    "verify-transcript": "node scripts/verify-transcript.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",

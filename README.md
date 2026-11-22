@@ -89,8 +89,10 @@ game/
   parts/45-items      use_item / pick_item               parts/50-combo     approach / read_dialogue
   parts/55-memory     exploration memory (checked)
 server/
-  src/                MCP server (index.js, cdp.js, tools/)
+  src/                MCP server (index.js, cdp.js, tools/, state-contract.js, transcript.js)
   scripts/            dev scripts: eval, smoke, game.sh, goto-explore, openclaw-play, tests
+  test/               offline tests and fake game harness (npm test, no game needed)
+  tasks/              scripted task suites (scripts/run-tasks.js)
 runtime/              native Linux runtime: run-linux.sh, linux-inject.js, install.sh
 ```
 
@@ -161,6 +163,8 @@ server/scripts/openclaw-play.sh cerebras/moonshotai-kimi-k3.1-pro-trial 30 9333 
 | `PMGT_WINDOW` | unchanged | Resize the game window on connect, e.g. `1280x720` |
 | `PMGT_HUD` | `0` | `1` overlays a progress panel on the game (map, state, budget, call count, thinking time, clock) |
 | `PMGT_HUD_LABEL` | empty | HUD title, e.g. `Kimi K3.1 · OpenClaw` |
+| `PMGT_FAIR_PLAY` | `0` | `1` stops the server registering spoiler and human-only tools at all (`describe_event`, `get_variables`, `get_switches`, `screenshot`, `get_pushed_events`), whatever the client allows |
+| `PMGT_TRANSCRIPT` | unset | Path of a JSONL file that records each tool call that reaches a handler as a hash-chained entry (redacted arguments, result hashes). Check it with `node server/scripts/verify-transcript.js <file>` |
 
 `server/scripts/openclaw-play.sh` additionally reads: `OC` (openclaw executable, default
 `~/.openclaw/bin/openclaw`), `ROUND_TIMEOUT` (seconds per round, default `1800`), `FAIL_WAIT`
@@ -196,6 +200,7 @@ env: {
 | `get_log` | What happened recently (dialogue, items, transfers, state changes) |
 | `describe_event` / `get_variables` / `get_switches` | Read event scripts, variables, switches (**spoilers** — hide these for fair play) |
 | `ping` / `screenshot` / `get_pushed_events` | Connection check, screenshot (for humans), pushed events |
+| `get_capabilities` | Diagnostics: CDP reachable, bridge loaded and current (hashes), modes, registered tools. Reports a down game as data instead of failing |
 
 ## Fair play: no cheating, no spoilers
 
@@ -207,7 +212,10 @@ env: {
   for the model's own reasoning — never to tell the user about dialogue or branches they have
   not seen. Hint mode gives clues only, and does not play the game for you.
 - Hiding `describe_event`, `get_variables` and `get_switches` on the client is recommended
-  (see `toolFilter` above).
+  (see `toolFilter` above). Stronger: `PMGT_FAIR_PLAY=1` stops the server registering those
+  tools (plus `screenshot` and `get_pushed_events`) at all, so the rule holds even when a
+  client is misconfigured. With `PMGT_TRANSCRIPT` set, every call is also recorded in a
+  hash-chained file that anyone can verify after the run (see `server/VERIFIED.md`).
 
 ## Running the game on another Windows machine (remote control)
 
@@ -261,6 +269,8 @@ native Steamworks libraries.
 
 ```bash
 cd server
+npm test                                          # offline tests + fake-game integration (no game needed, also runs in CI)
+node scripts/run-tasks.js --fake                  # mirror task suite against the fake game
 ./scripts/game.sh start 9334                      # launch an isolated game instance (several can run in parallel)
 PMGT_CDP_PORT=9334 node scripts/goto-explore.js   # start a new game and advance to the first playable room (~30 s)
 PMGT_CDP_PORT=9334 node scripts/eval.js --reload  # hot-reload game/parts (no game restart)
