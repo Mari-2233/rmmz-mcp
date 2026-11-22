@@ -37,6 +37,16 @@ export async function applyConfig(cdp) {
   if (size) await cdp.evaluate(`window.__ai && __ai.windowSize && __ai.windowSize(${size[1]}, ${size[2]}); true`);
   if (env.PMGT_BUDGET === '1') await cdp.evaluate('window.__ai && __ai.budget && __ai.budget.enable(true); true');
   if (env.PMGT_HUD === '1') await cdp.evaluate(`window.__ai && __ai.hud && __ai.hud.show(true, ${JSON.stringify(env.PMGT_HUD_LABEL || '')}); true`);
+  // AI play mode: a game still on its boot screens (fresh launch) is started for the model, the
+  // same way restart does it. Not awaited; the model sees BOOT and waits.
+  if (env.PMGT_BUDGET === '1') {
+    await cdp.evaluate(`(() => {
+      const n = window.SceneManager && SceneManager._scene && SceneManager._scene.constructor.name;
+      const boot = ['Scene_Boot', 'Scene_PMSplashScreen', 'Scene_Language_Selection', 'Scene_Title'];
+      if (window.__ai && __ai.__newGame && boot.includes(n) && !window.__aiBooting) __ai.__newGame().catch(e => console.error('[ai] newGame', e));
+      return n;
+    })()`);
+  }
 }
 
 // Fresh game: reload the page (all JS state gone; localStorage lessons survive), then a new game.
