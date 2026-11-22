@@ -15,3 +15,6 @@ dist/
 
 # local recording instrumentation (not shipped)
 server/scripts/hud-proxy.js
+
+# session transcripts and task ledgers (local run records, may hold dialogue hashes)
+*.jsonl

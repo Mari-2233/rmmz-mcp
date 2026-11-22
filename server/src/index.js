@@ -3,11 +3,14 @@
 // Env:
 //   PMGT_CDP_HOST (default 127.0.0.1)  PMGT_CDP_PORT (default 9333)
 //   PMGT_MCP_DEV=1  → also register dev-only tools (eval_js, reload_bridge)
+//   PMGT_FAIR_PLAY=1  → do not register spoiler/human-only tools (see state-contract.js)
+//   PMGT_TRANSCRIPT=<path>  → append a hash-chained record of tool calls (see transcript.js)
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { ensureBridge, applyConfig } from './bridge.js';
 import { CdpClient } from './cdp.js';
 import { EventLog } from './events.js';
+import { Transcript } from './transcript.js';
 import { log } from './util.js';
 import { registerAll } from './tools/index.js';
 
@@ -74,12 +77,25 @@ const server = new McpServer(
   { instructions: INSTRUCTIONS },
 );
 
-const ctx = { server, cdp, events, dev: process.env.PMGT_MCP_DEV === '1' };
+// A broken transcript chain is reported and the server runs without one: an optional log
+// must never stop the game from being playable. get_capabilities shows transcript: false.
+let transcript = null;
+if (process.env.PMGT_TRANSCRIPT) {
+  try { transcript = new Transcript(process.env.PMGT_TRANSCRIPT); }
+  catch (e) { log('transcript disabled:', e.message); }
+}
+
+const ctx = {
+  server, cdp, events, transcript,
+  dev: process.env.PMGT_MCP_DEV === '1',
+  fairPlay: process.env.PMGT_FAIR_PLAY === '1',
+};
+if (ctx.dev && ctx.fairPlay) log('PMGT_FAIR_PLAY=1 wins over PMGT_MCP_DEV=1: dev tools not registered');
 registerAll(ctx);
 
 await server.connect(new StdioServerTransport());
-log(`ready (CDP ${cdp.host}:${cdp.port}, dev=${ctx.dev})`);
+log(`ready (CDP ${cdp.host}:${cdp.port}, dev=${ctx.dev}, fairPlay=${ctx.fairPlay}, transcript=${!!transcript})`);
 
-const shutdown = () => { cdp.close(); process.exit(0); };
+const shutdown = () => { transcript?.close(); cdp.close(); process.exit(0); };
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
