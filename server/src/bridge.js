@@ -54,6 +54,28 @@ export async function applyConfig(cdp) {
 // NW.js does not re-run inject_js_start on reload, so the same inject script is registered to run
 // at document start first (case-insensitive paths, Steam-less greenworks), as on a normal launch.
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// The reload brings the window back fullscreen (CC_AutoFullScreen requests it in Scene_Boot).
+// Put it back the way the host launcher sets it: leave fullscreen, unmaximise, fixed size, centred.
+// Size: PMGT_WINDOW (WxH), default 1296x759 like host/windows/run-pmgt.ps1.
+export async function fixWindow(cdp) {
+  const m = /^(\d+)x(\d+)$/.exec(process.env.PMGT_WINDOW || '') || [0, 1296, 759];
+  const W = Number(m[1]), H = Number(m[2]);
+  return cdp.evaluate(`(async () => {
+    const w = window.nw && nw.Window && nw.Window.get();
+    if (!w) return 'no nw window';
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    try { if (document.fullscreenElement && document.exitFullscreen) await document.exitFullscreen(); } catch (e) {}
+    try { w.leaveFullscreen(); } catch (e) {}
+    await sleep(150);
+    try { w.unmaximize(); } catch (e) {}
+    w.resizeTo(${W}, ${H});
+    await sleep(150);
+    try { w.moveTo(Math.round((screen.availWidth - ${W}) / 2), Math.round((screen.availHeight - ${H}) / 2)); } catch (e) {}
+    return w.width + 'x' + w.height + (w.isFullscreen ? ' fullscreen' : '');
+  })()`, { timeoutMs: 5000 }).catch(e => 'window ERR ' + e.message);
+}
+
 export async function restartGame(cdp) {
   const inject = await readFile(path.join(GAME, '../runtime/linux-inject.js'), 'utf8');
   const { identifier } = await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: inject });
@@ -68,6 +90,12 @@ export async function restartGame(cdp) {
   } finally {
     await cdp.send('Page.removeScriptToEvaluateOnNewDocument', { identifier }).catch(() => {});
   }
+  // Right after boot: Scene_Boot has asked for fullscreen by now (wait until it has started).
+  for (let i = 0; i < 20; i++) {
+    if (await cdp.evaluate('!(SceneManager._scene instanceof Scene_Boot) || !!SceneManager._scene._started || !!document.fullscreenElement').catch(() => false)) break;
+    await sleep(250);
+  }
+  let win = await fixWindow(cdp);
   await ensureBridge(cdp);
   await applyConfig(cdp);
   // Pass the boot screens inside the page (not awaited: on slow machines it can take a minute,
@@ -75,9 +103,11 @@ export async function restartGame(cdp) {
   await cdp.evaluate('__ai.__newGame().catch(e => console.error("[ai] newGame", e)); true');
   let onMap = false;
   for (let i = 0; i < 50 && !onMap; i++) { await sleep(500); onMap = await cdp.evaluate('SceneManager._scene instanceof Scene_Map').catch(() => false); }
+  // In case the game went fullscreen again after the first fix.
+  if (await cdp.evaluate('!!(document.fullscreenElement || (window.nw && nw.Window.get().isFullscreen))').catch(() => false)) win = await fixWindow(cdp);
   const state = await cdp.evaluate('__ai.getState()');
   return {
-    restarted: true, ms: Date.now() - t0, inGame: onMap,
+    restarted: true, ms: Date.now() - t0, inGame: onMap, window: win,
     next: onMap ? 'New game started. Read the opening dialogue.' : 'Boot screens are being passed automatically; call wait until the game starts.',
     state,
   };
